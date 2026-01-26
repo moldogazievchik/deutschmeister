@@ -93,10 +93,12 @@ export function Level() {
             ).length || 0;
             const totalLessons = module.lessons?.length || 0;
             const progress = totalLessons > 0 ? (lessonsCompleted / totalLessons) * 100 : 0;
-            const isUnlocked = index === 0 || progress > 0 ||
-              (index > 0 && levelData.modules[index - 1].lessons?.every((l) =>
-                isLessonCompleted(`${level}-${levelData.modules[index - 1].id}-${l.id}`)
-              ));
+            // Unlock if: first module, OR has any progress, OR previous module has at least 1 completed lesson
+            const prevModule = index > 0 ? levelData.modules[index - 1] : null;
+            const prevModuleHasProgress = prevModule?.lessons?.some((l) =>
+              isLessonCompleted(`${level}-${prevModule.id}-${l.id}`)
+            ) || false;
+            const isUnlocked = index === 0 || progress > 0 || prevModuleHasProgress;
 
             const getModuleBgColor = () => {
               if (progress === 100) return '#dcfce7';

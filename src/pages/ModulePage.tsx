@@ -37,6 +37,11 @@ export function ModulePage() {
   const [isCorrect, setIsCorrect] = useState(false);
   const [lessonStats, setLessonStats] = useState({ correct: 0, total: 0 });
 
+  // Matching exercise state
+  const [matchingPairs, setMatchingPairs] = useState<Record<number, number>>({});
+  const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
+  const [shuffledRight, setShuffledRight] = useState<string[]>([]);
+
   const levelData = level ? levelsContent[level as Level] : null;
   const moduleData = levelData?.modules.find(m => m.id === Number(module));
 
@@ -62,11 +67,22 @@ export function ModulePage() {
   const handleCheckAnswer = () => {
     if (!currentExercise) return;
 
-    const correctAnswer = Array.isArray(currentExercise.correctAnswer)
-      ? currentExercise.correctAnswer[0]
-      : currentExercise.correctAnswer;
+    let correct = false;
 
-    const correct = userAnswer.toLowerCase().trim() === correctAnswer.toLowerCase().trim();
+    if (currentExercise.type === 'matching') {
+      // For matching: check if all pairs are correct
+      const correctAnswers = currentExercise.correctAnswer as string[];
+      correct = Object.keys(matchingPairs).length === correctAnswers.length &&
+        Object.entries(matchingPairs).every(([leftIdx, rightIdx]) => {
+          return shuffledRight[rightIdx] === correctAnswers[Number(leftIdx)];
+        });
+    } else {
+      const correctAnswer = Array.isArray(currentExercise.correctAnswer)
+        ? currentExercise.correctAnswer[0]
+        : currentExercise.correctAnswer;
+      correct = userAnswer.toLowerCase().trim() === correctAnswer.toLowerCase().trim();
+    }
+
     setIsCorrect(correct);
     setShowResult(true);
     setLessonStats(prev => ({
@@ -79,9 +95,19 @@ export function ModulePage() {
     if (!selectedLesson) return;
 
     if (exerciseIndex < selectedLesson.exercises.length - 1) {
-      setExerciseIndex(prev => prev + 1);
+      const nextIndex = exerciseIndex + 1;
+      setExerciseIndex(nextIndex);
       setUserAnswer('');
       setShowResult(false);
+      // Reset matching state
+      setMatchingPairs({});
+      setSelectedLeft(null);
+      // Initialize shuffled right for matching exercises
+      const nextExercise = selectedLesson.exercises[nextIndex];
+      if (nextExercise?.type === 'matching' && Array.isArray(nextExercise.correctAnswer)) {
+        const shuffled = [...nextExercise.correctAnswer].sort(() => Math.random() - 0.5);
+        setShuffledRight(shuffled);
+      }
     } else {
       // Lesson completed
       completeLesson(`${level}-${module}-${selectedLesson.id}`);
@@ -93,6 +119,10 @@ export function ModulePage() {
       setSelectedLesson(null);
       setExerciseIndex(0);
       setLessonStats({ correct: 0, total: 0 });
+      // Reset matching state
+      setMatchingPairs({});
+      setSelectedLeft(null);
+      setShuffledRight([]);
     }
   };
 
@@ -102,6 +132,15 @@ export function ModulePage() {
     setUserAnswer('');
     setShowResult(false);
     setLessonStats({ correct: 0, total: 0 });
+    // Reset matching state
+    setMatchingPairs({});
+    setSelectedLeft(null);
+    // Initialize shuffled right for matching exercises
+    const firstExercise = lesson.exercises[0];
+    if (firstExercise?.type === 'matching' && Array.isArray(firstExercise.correctAnswer)) {
+      const shuffled = [...firstExercise.correctAnswer].sort(() => Math.random() - 0.5);
+      setShuffledRight(shuffled);
+    }
   };
 
   const closeLesson = () => {
@@ -110,6 +149,10 @@ export function ModulePage() {
     setUserAnswer('');
     setShowResult(false);
     setLessonStats({ correct: 0, total: 0 });
+    // Reset matching state
+    setMatchingPairs({});
+    setSelectedLeft(null);
+    setShuffledRight([]);
   };
 
   const tabs = [
@@ -519,6 +562,154 @@ export function ModulePage() {
                   </div>
                 )}
 
+                {/* Matching */}
+                {currentExercise.type === 'matching' && currentExercise.options && (
+                  <div>
+                    {(() => {
+                      const leftItems = currentExercise.options as string[];
+                      const correctAnswers = currentExercise.correctAnswer as string[];
+
+                      const handleLeftClick = (index: number) => {
+                        if (showResult) return;
+                        setSelectedLeft(selectedLeft === index ? null : index);
+                      };
+
+                      const handleRightClick = (index: number) => {
+                        if (showResult || selectedLeft === null) return;
+                        const existingPair = Object.entries(matchingPairs).find(([_, rIdx]) => rIdx === index);
+                        if (existingPair) {
+                          const newPairs = { ...matchingPairs };
+                          delete newPairs[Number(existingPair[0])];
+                          newPairs[selectedLeft] = index;
+                          setMatchingPairs(newPairs);
+                        } else {
+                          setMatchingPairs({ ...matchingPairs, [selectedLeft]: index });
+                        }
+                        setSelectedLeft(null);
+                      };
+
+                      const removePair = (leftIdx: number) => {
+                        if (showResult) return;
+                        const newPairs = { ...matchingPairs };
+                        delete newPairs[leftIdx];
+                        setMatchingPairs(newPairs);
+                      };
+
+                      return (
+                        <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center' }}>
+                          {/* Left column */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {leftItems.map((item, idx) => {
+                              const isPaired = matchingPairs[idx] !== undefined;
+                              const isSelected = selectedLeft === idx;
+                              let bgColor = 'var(--gray-50)';
+                              let borderColor = 'var(--gray-200)';
+
+                              if (showResult) {
+                                if (isPaired && shuffledRight[matchingPairs[idx]] === correctAnswers[idx]) {
+                                  bgColor = '#dcfce7';
+                                  borderColor = '#16a34a';
+                                } else if (isPaired) {
+                                  bgColor = '#fee2e2';
+                                  borderColor = '#dc2626';
+                                }
+                              } else {
+                                if (isSelected) {
+                                  bgColor = 'var(--primary-50)';
+                                  borderColor = 'var(--primary-500)';
+                                } else if (isPaired) {
+                                  bgColor = '#dbeafe';
+                                  borderColor = '#3b82f6';
+                                }
+                              }
+
+                              return (
+                                <button
+                                  key={idx}
+                                  onClick={() => isPaired ? removePair(idx) : handleLeftClick(idx)}
+                                  disabled={showResult}
+                                  style={{
+                                    padding: '0.6rem 0.75rem',
+                                    borderRadius: '0.5rem',
+                                    border: `2px solid ${borderColor}`,
+                                    backgroundColor: bgColor,
+                                    cursor: showResult ? 'default' : 'pointer',
+                                    minWidth: '120px',
+                                    textAlign: 'center',
+                                    fontSize: '0.875rem',
+                                    fontWeight: 500,
+                                  }}
+                                >
+                                  {item}
+                                  {isPaired && !showResult && (
+                                    <span style={{ marginLeft: '0.5rem', color: 'var(--gray-400)' }}>×</span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Right column */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {shuffledRight.map((item, idx) => {
+                              const pairedLeftIdx = Object.entries(matchingPairs).find(([_, rIdx]) => rIdx === idx)?.[0];
+                              const isPaired = pairedLeftIdx !== undefined;
+                              let bgColor = 'var(--gray-50)';
+                              let borderColor = 'var(--gray-200)';
+
+                              if (showResult && isPaired) {
+                                if (shuffledRight[idx] === correctAnswers[Number(pairedLeftIdx)]) {
+                                  bgColor = '#dcfce7';
+                                  borderColor = '#16a34a';
+                                } else {
+                                  bgColor = '#fee2e2';
+                                  borderColor = '#dc2626';
+                                }
+                              } else if (isPaired) {
+                                bgColor = '#dbeafe';
+                                borderColor = '#3b82f6';
+                              }
+
+                              return (
+                                <button
+                                  key={idx}
+                                  onClick={() => handleRightClick(idx)}
+                                  disabled={showResult || selectedLeft === null}
+                                  style={{
+                                    padding: '0.6rem 0.75rem',
+                                    borderRadius: '0.5rem',
+                                    border: `2px solid ${borderColor}`,
+                                    backgroundColor: bgColor,
+                                    cursor: showResult || selectedLeft === null ? 'default' : 'pointer',
+                                    minWidth: '120px',
+                                    textAlign: 'center',
+                                    fontSize: '0.875rem',
+                                    fontWeight: 500,
+                                    opacity: selectedLeft === null && !isPaired && !showResult ? 0.6 : 1,
+                                  }}
+                                >
+                                  {item}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {selectedLeft !== null && !showResult && (
+                      <p style={{
+                        marginTop: '0.75rem',
+                        textAlign: 'center',
+                        color: 'var(--gray-500)',
+                        fontSize: '0.8rem'
+                      }}>
+                        Выберите перевод справа
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Explanation */}
                 {showResult && currentExercise.explanation && (
                   <div style={{
@@ -539,7 +730,15 @@ export function ModulePage() {
             {/* Actions */}
             <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.75rem' }}>
               {!showResult ? (
-                <Button onClick={handleCheckAnswer} disabled={!userAnswer} style={{ flex: 1 }}>
+                <Button
+                  onClick={handleCheckAnswer}
+                  disabled={
+                    currentExercise?.type === 'matching'
+                      ? Object.keys(matchingPairs).length !== (currentExercise?.correctAnswer as string[])?.length
+                      : !userAnswer
+                  }
+                  style={{ flex: 1 }}
+                >
                   Проверить
                 </Button>
               ) : (

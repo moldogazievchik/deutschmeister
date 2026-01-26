@@ -111,8 +111,8 @@ const sampleExercises: Record<string, Exercise[]> = {
     {
       id: 'lesen-5',
       type: 'matching',
-      question: 'Соотнесите слова с их переводом:\n\ndie Küche, das Bad, das Zimmer',
-      options: ['комната', 'кухня', 'ванная'],
+      question: 'Соотнесите слова с их переводом:',
+      options: ['die Küche', 'das Bad', 'das Zimmer'],
       correctAnswer: ['кухня', 'ванная', 'комната'],
       explanation: 'die Küche - кухня, das Bad - ванная, das Zimmer - комната',
       points: 15,
@@ -228,6 +228,11 @@ export function PracticeSession() {
   const [isCorrect, setIsCorrect] = useState(false);
   const [stats, setStats] = useState({ correct: 0, incorrect: 0 });
 
+  // Matching exercise state
+  const [matchingPairs, setMatchingPairs] = useState<Record<number, number>>({});
+  const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
+  const [shuffledRight, setShuffledRight] = useState<string[]>([]);
+
   const practiceConfig = type ? practiceTypes[type] : null;
 
   useEffect(() => {
@@ -237,6 +242,18 @@ export function PracticeSession() {
       setExercises(shuffled.slice(0, 5));
     }
   }, [type]);
+
+  // Initialize shuffled options for matching exercises
+  useEffect(() => {
+    const exercise = exercises[currentIndex];
+    if (exercise?.type === 'matching' && exercise.correctAnswer && Array.isArray(exercise.correctAnswer)) {
+      // correctAnswer contains the Russian translations (right column)
+      const shuffled = [...exercise.correctAnswer].sort(() => Math.random() - 0.5);
+      setShuffledRight(shuffled);
+      setMatchingPairs({});
+      setSelectedLeft(null);
+    }
+  }, [currentIndex, exercises]);
 
   if (!practiceConfig) {
     return (
@@ -269,7 +286,14 @@ export function PracticeSession() {
       ? currentExercise.correctAnswer[0]
       : currentExercise.correctAnswer;
 
-    if (currentExercise.type === 'true-false') {
+    if (currentExercise.type === 'matching') {
+      // For matching: check if all pairs are correct
+      const correctAnswers = currentExercise.correctAnswer as string[];
+      correct = Object.keys(matchingPairs).length === correctAnswers.length &&
+        Object.entries(matchingPairs).every(([leftIdx, rightIdx]) => {
+          return shuffledRight[rightIdx] === correctAnswers[Number(leftIdx)];
+        });
+    } else if (currentExercise.type === 'true-false') {
       correct = userAnswer.toLowerCase() === correctAnswer.toLowerCase();
     } else if (currentExercise.type === 'fill-blank' || currentExercise.type === 'translation' || currentExercise.type === 'reorder') {
       correct = userAnswer.toLowerCase().trim() === correctAnswer.toLowerCase().trim();
@@ -291,6 +315,9 @@ export function PracticeSession() {
       setCurrentIndex(prev => prev + 1);
       setUserAnswer('');
       setShowResult(false);
+      // Reset matching state
+      setMatchingPairs({});
+      setSelectedLeft(null);
     } else {
       finishSession();
     }
@@ -679,6 +706,157 @@ export function PracticeSession() {
           </div>
         )}
 
+        {/* Matching */}
+        {currentExercise.type === 'matching' && currentExercise.options && (
+          <div>
+            {(() => {
+              // Use options as the left column (German words)
+              const leftItems = currentExercise.options as string[];
+              const correctAnswers = currentExercise.correctAnswer as string[];
+
+              const handleLeftClick = (index: number) => {
+                if (showResult) return;
+                setSelectedLeft(selectedLeft === index ? null : index);
+              };
+
+              const handleRightClick = (index: number) => {
+                if (showResult || selectedLeft === null) return;
+                // Check if this right item is already paired
+                const existingPair = Object.entries(matchingPairs).find(([_, rIdx]) => rIdx === index);
+                if (existingPair) {
+                  // Remove old pair and create new one
+                  const newPairs = { ...matchingPairs };
+                  delete newPairs[Number(existingPair[0])];
+                  newPairs[selectedLeft] = index;
+                  setMatchingPairs(newPairs);
+                } else {
+                  setMatchingPairs({ ...matchingPairs, [selectedLeft]: index });
+                }
+                setSelectedLeft(null);
+              };
+
+              const removePair = (leftIdx: number) => {
+                if (showResult) return;
+                const newPairs = { ...matchingPairs };
+                delete newPairs[leftIdx];
+                setMatchingPairs(newPairs);
+              };
+
+              return (
+                <div style={{ display: 'flex', gap: '2rem', justifyContent: 'center' }}>
+                  {/* Left column - German words */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {leftItems.map((item, idx) => {
+                      const isPaired = matchingPairs[idx] !== undefined;
+                      const isSelected = selectedLeft === idx;
+                      let bgColor = 'var(--gray-50)';
+                      let borderColor = 'var(--gray-200)';
+
+                      if (showResult) {
+                        if (isPaired && shuffledRight[matchingPairs[idx]] === correctAnswers[idx]) {
+                          bgColor = '#dcfce7';
+                          borderColor = '#16a34a';
+                        } else if (isPaired) {
+                          bgColor = '#fee2e2';
+                          borderColor = '#dc2626';
+                        }
+                      } else {
+                        if (isSelected) {
+                          bgColor = 'var(--primary-50)';
+                          borderColor = 'var(--primary-500)';
+                        } else if (isPaired) {
+                          bgColor = '#dbeafe';
+                          borderColor = '#3b82f6';
+                        }
+                      }
+
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => isPaired ? removePair(idx) : handleLeftClick(idx)}
+                          disabled={showResult}
+                          style={{
+                            padding: '0.75rem 1rem',
+                            borderRadius: '0.5rem',
+                            border: `2px solid ${borderColor}`,
+                            backgroundColor: bgColor,
+                            cursor: showResult ? 'default' : 'pointer',
+                            minWidth: '140px',
+                            textAlign: 'center',
+                            fontSize: '0.95rem',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {item}
+                          {isPaired && !showResult && (
+                            <span style={{ marginLeft: '0.5rem', color: 'var(--gray-400)' }}>×</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Right column - Russian translations */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {shuffledRight.map((item, idx) => {
+                      const pairedLeftIdx = Object.entries(matchingPairs).find(([_, rIdx]) => rIdx === idx)?.[0];
+                      const isPaired = pairedLeftIdx !== undefined;
+                      let bgColor = 'var(--gray-50)';
+                      let borderColor = 'var(--gray-200)';
+
+                      if (showResult && isPaired) {
+                        if (shuffledRight[idx] === correctAnswers[Number(pairedLeftIdx)]) {
+                          bgColor = '#dcfce7';
+                          borderColor = '#16a34a';
+                        } else {
+                          bgColor = '#fee2e2';
+                          borderColor = '#dc2626';
+                        }
+                      } else if (isPaired) {
+                        bgColor = '#dbeafe';
+                        borderColor = '#3b82f6';
+                      }
+
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleRightClick(idx)}
+                          disabled={showResult || selectedLeft === null}
+                          style={{
+                            padding: '0.75rem 1rem',
+                            borderRadius: '0.5rem',
+                            border: `2px solid ${borderColor}`,
+                            backgroundColor: bgColor,
+                            cursor: showResult || selectedLeft === null ? 'default' : 'pointer',
+                            minWidth: '140px',
+                            textAlign: 'center',
+                            fontSize: '0.95rem',
+                            fontWeight: 500,
+                            opacity: selectedLeft === null && !isPaired && !showResult ? 0.6 : 1,
+                          }}
+                        >
+                          {item}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {selectedLeft !== null && !showResult && (
+              <p style={{
+                marginTop: '1rem',
+                textAlign: 'center',
+                color: 'var(--gray-500)',
+                fontSize: '0.875rem'
+              }}>
+                Теперь выберите перевод справа
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Explanation after answer */}
         {showResult && currentExercise.explanation && (
           <div style={{
@@ -700,7 +878,11 @@ export function PracticeSession() {
         {!showResult ? (
           <Button
             onClick={checkAnswer}
-            disabled={!userAnswer}
+            disabled={
+              currentExercise.type === 'matching'
+                ? Object.keys(matchingPairs).length !== (currentExercise.correctAnswer as string[]).length
+                : !userAnswer
+            }
             style={{ flex: 1 }}
           >
             Проверить
